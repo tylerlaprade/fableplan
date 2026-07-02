@@ -39,8 +39,8 @@ git clone https://github.com/tylerlaprade/fableplan \
 # then in ~/.zshrc:  plugins=(… fableplan)
 ```
 
-**Fish:** unsupported for now — the function relies on POSIX per-command env
-prefixes. PRs welcome.
+**Fish:** unsupported for now — `fableplan.sh` is a POSIX-sh function file,
+which fish can't source.
 
 ## Uninstall
 
@@ -109,10 +109,12 @@ to ~250K, ~8M cache reads, ~50K output):
   — plan mode silently becomes real Opus 4.8 and execution becomes Sonnet 5,
   with no error.
 - **Alias remap inside fableplan sessions**: `opus` *means* Fable and
-  `sonnet` *means* Opus 4.8 — in the `/model` picker (labels don't update on
-  the direct API), in subagent `model: opus/sonnet` frontmatter, and in
-  fallback chains. A tab you forgot was fableplan behaves differently from a
-  plain one. `haiku` and background traffic are untouched.
+  `sonnet` *means* Opus 4.8 — in subagent `model: opus/sonnet` frontmatter and
+  in fallback chains. The `/model` picker is honest about it (the Sonnet row
+  describes itself as "Opus 4.8", and a **Fable Plan ✔** entry marks the
+  active mode), but the startup banner says "Opus Plan" — that label is
+  hardcoded in Claude Code. A tab you forgot was fableplan behaves differently
+  from a plain one. `haiku` and background traffic are untouched.
 - **200K guard**: above 200K conversation tokens, plan mode silently stops
   upgrading — you plan on Opus 4.8 with no UI indication. For a Fable-quality
   replan in a deep session, start a fresh session from the plan file instead.
