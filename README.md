@@ -1,7 +1,8 @@
 # fableplan
 
-Claude Code launcher: **Fable 5 plans, Opus 4.8 executes** — the old `opusplan`
-idea (Opus plans, Sonnet executes) moved up one model tier.
+**Fable plans, Opus executes** — the old `opusplan` idea bumped up a model tier.
+
+<img width="1335" height="299" alt="image" src="https://github.com/user-attachments/assets/116e7728-4633-4fcc-a2a5-af2a8f316ac2" />
 
 ```sh
 fableplan                  # new session
