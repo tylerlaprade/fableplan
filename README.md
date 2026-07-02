@@ -39,8 +39,15 @@ git clone https://github.com/tylerlaprade/fableplan \
 # then in ~/.zshrc:  plugins=(… fableplan)
 ```
 
-**Fish:** unsupported for now — `fableplan.sh` is a POSIX-sh function file,
-which fish can't source.
+**Fish:**
+
+```sh
+git clone https://github.com/tylerlaprade/fableplan ~/.fableplan
+mkdir -p ~/.config/fish/functions
+ln -s ~/.fableplan/fableplan.fish ~/.config/fish/functions/fableplan.fish
+```
+
+Fish autoloads the function on first use — no config edits needed.
 
 ## Uninstall
 
