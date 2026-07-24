@@ -12,6 +12,8 @@ fableplan --resume <id>    #   fableplan, never plain `claude` (see Caveats)
 
 ## Install
 
+Needs Claude Code 2.1.219 or later — the release that added Opus 5. On anything older, `claude` rejects the execution model and fableplan fails to start.
+
 **bash / zsh** — clone and source it:
 
 ```sh
