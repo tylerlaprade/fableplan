@@ -5,9 +5,9 @@
 <img width="1335" height="299" alt="image" src="https://github.com/user-attachments/assets/116e7728-4633-4fcc-a2a5-af2a8f316ac2" />
 
 ```sh
-fableplan                  # new session
-fableplan -c               # continue — always resume fableplan sessions with
-fableplan --resume <id>    #   fableplan, never plain `claude` (see Caveats)
+fableplan                  # new session, starting in plan mode
+fableplan -c               # continue in plan mode — always resume fableplan
+fableplan --resume <id>    #   sessions with fableplan, never plain `claude`
 ```
 
 ## Install
@@ -49,7 +49,9 @@ ln -s ~/.fableplan/fableplan.fish ~/.config/fish/functions/fableplan.fish
 
 Both vars take a full model name only. The aliases that track the latest release — `fable`, `opus`, `best` — are rejected with *"There's an issue with the selected model (opus)"*, so the versions above are pinned by hand and need a bump each time a new Opus or Fable ships.
 
-No hook or setting can do this instead — hooks can't change models and none fire on mode changes. (Plan-mode upgrade also has a ≤200K-context guard, observed in v2.1.198, undocumented.)
+No hook or setting can replace the model remap — hooks can't change models and none fire on mode changes. (Plan-mode upgrade also has a ≤200K-context guard, observed in v2.1.198, undocumented.)
+
+The wrapper also passes `--permission-mode plan`, so new and resumed sessions start in plan mode. You can still leave plan mode after startup.
 
 ## Caveats
 
@@ -75,10 +77,10 @@ Prices per MTok: Fable $10/$50 · Opus 5 $5/$25. Caches are per-model, 5-min TTL
 <summary><b>Verify</b> the routing</summary>
 
 ```sh
-# execution half — expect claude-opus-5
-zsh -ic 'fableplan -p --output-format json "Reply OK"' | jq '.modelUsage | keys'
 # plan half — expect claude-fable-5[1m]  ([1m] = extended-context tag, stripped before the API call)
-zsh -ic 'fableplan -p --permission-mode plan --output-format json "Reply OK"' | jq '.modelUsage | keys'
+zsh -ic 'fableplan -p --output-format json "Reply OK"' | jq '.modelUsage | keys'
+# execution half — expect claude-opus-5
+zsh -ic 'fableplan -p --permission-mode acceptEdits --output-format json "Reply OK"' | jq '.modelUsage | keys'
 ```
 
 </details>

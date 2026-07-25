@@ -14,5 +14,5 @@ function fableplan --description "Claude Code: Fable 5 plans, Opus 5 executes"
     set -lx ANTHROPIC_CUSTOM_MODEL_OPTION opusplan
     set -lx ANTHROPIC_CUSTOM_MODEL_OPTION_NAME "Fable Plan"
     set -lx ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION "Fable 5 in plan mode, Opus 5 otherwise"
-    claude --model opusplan $argv
+    claude --model opusplan --permission-mode plan $argv
 end

@@ -18,6 +18,6 @@ fableplan() {
     export ANTHROPIC_CUSTOM_MODEL_OPTION="opusplan"
     export ANTHROPIC_CUSTOM_MODEL_OPTION_NAME="Fable Plan"
     export ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION="Fable 5 in plan mode, Opus 5 otherwise"
-    claude --model opusplan "$@"
+    claude --model opusplan --permission-mode plan "$@"
   )
 }
