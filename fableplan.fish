@@ -9,6 +9,9 @@ function fableplan --description "Claude Code: Fable 5 plans, Opus 5 executes"
     # aliases that track the latest release, so each one is pinned by hand.
     set -lx ANTHROPIC_DEFAULT_OPUS_MODEL claude-fable-5
     set -lx ANTHROPIC_DEFAULT_SONNET_MODEL claude-opus-5
+    # Cancel a personal claude wrapper's subagent default. `inherit` lets each
+    # agent use its own model choice, or the current plan/execution model.
+    set -lx CLAUDE_CODE_SUBAGENT_MODEL inherit
     # Adds an honestly-labeled "Fable Plan" entry to the /model picker
     # (the built-in entry for this mode says "Opus Plan").
     set -lx ANTHROPIC_CUSTOM_MODEL_OPTION opusplan
