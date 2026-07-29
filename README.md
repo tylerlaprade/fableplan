@@ -36,7 +36,16 @@ git clone https://github.com/tylerlaprade/fableplan ~/.fableplan
 ln -s ~/.fableplan/fableplan.fish ~/.config/fish/functions/fableplan.fish
 ```
 
-**Uninstall:** remove the line/entry you added, then `rm -rf ~/.fableplan`.
+**PowerShell** (Windows PowerShell 5.1 and PowerShell 7) — dot-source it from your profile:
+
+```powershell
+git clone https://github.com/tylerlaprade/fableplan $HOME\.fableplan
+Add-Content $PROFILE ". `$HOME\.fableplan\fableplan.ps1"
+```
+
+PowerShell has no subshell, so `fableplan.ps1` captures the five variables before setting them and restores them in a `finally` block — including the case where one was not set at all. An interrupted run cannot leave a remapped alias behind in the session.
+
+**Uninstall:** remove the line/entry you added, then `rm -rf ~/.fableplan` (PowerShell: `Remove-Item -Recurse -Force $HOME\.fableplan`).
 
 ## How it works
 
