@@ -1,0 +1,17 @@
+{
+  "modelPicker": {
+    "options": [
+      {
+        "model": "fable-plan",
+        "label": "Fable Plan",
+        "description": "Fable 5.1 in plan mode, Opus 5 otherwise",
+        "behavesAs": "claude-opus-5"
+      }
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "jq -r '.permission_mode // empty' > \"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/claude-mode.$CLAUDE_PID\"" }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "jq -r '.permission_mode // empty' > \"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/claude-mode.$CLAUDE_PID\"" }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "jq -r '.permission_mode // empty' > \"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/claude-mode.$CLAUDE_PID\"" }] }]
+  }
+}
