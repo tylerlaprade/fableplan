@@ -9,6 +9,12 @@ function fableplan --description "Claude Code: Fable 5.1 plans, Opus 5 executes"
         echo "fableplan: jq is required (the mode hook uses it) but is not on PATH" >&2
         return 1
     end
+    # The preload rewrites the model in the JSON body of a Messages API
+    # request. The other providers' adapters move it into the URL first.
+    if test -n "$CLAUDE_CODE_USE_BEDROCK$CLAUDE_CODE_USE_VERTEX$CLAUDE_CODE_USE_FOUNDRY"
+        echo "fableplan: only the Anthropic API is supported, not Bedrock, Vertex or Foundry" >&2
+        return 1
+    end
     # path resolve follows the symlink from ~/.config/fish/functions back to
     # the clone, where the preload, settings and hook live. The hook in
     # fableplan.settings.json finds its script through FABLEPLAN_DIR.

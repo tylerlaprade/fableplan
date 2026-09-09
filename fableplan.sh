@@ -20,6 +20,12 @@ fableplan() {
       printf 'fableplan: jq is required (the mode hook uses it) but is not on PATH\n' >&2
       exit 1
     fi
+    # The preload rewrites the model in the JSON body of a Messages API
+    # request. The other providers' adapters move it into the URL first.
+    if [ -n "${CLAUDE_CODE_USE_BEDROCK:-}${CLAUDE_CODE_USE_VERTEX:-}${CLAUDE_CODE_USE_FOUNDRY:-}" ]; then
+      printf 'fableplan: only the Anthropic API is supported, not Bedrock, Vertex or Foundry\n' >&2
+      exit 1
+    fi
     # The hook in fableplan.settings.json finds its script through this.
     export FABLEPLAN_DIR
     # Loads fableplan.js into the claude binary before its bundle runs. Bun
