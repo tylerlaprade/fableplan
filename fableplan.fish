@@ -1,21 +1,36 @@
-# fableplan — Fable 5 plans, Opus 5 executes.
-# Mechanism, economics, and caveats: see README.md in this directory.
+# fableplan — Fable 5.1 plans, Opus 5 executes.
+# Mechanism and caveats: see README.md in this directory.
 #
 # set -lx makes each var function-local and exported: it reaches `claude`
 # (including a wrapper function) and vanishes when fableplan returns —
 # fish's native equivalent of the subshell in fableplan.sh.
-function fableplan --description "Claude Code: Fable 5 plans, Opus 5 executes"
-    # Full model names only — these vars reject the `fable`/`opus`/`best`
-    # aliases that track the latest release, so each one is pinned by hand.
-    set -lx ANTHROPIC_DEFAULT_OPUS_MODEL claude-fable-5
-    set -lx ANTHROPIC_DEFAULT_SONNET_MODEL claude-opus-5
-    # Cancel a personal claude wrapper's subagent default. `inherit` lets each
-    # agent use its own model choice, or the current plan/execution model.
-    set -lx CLAUDE_CODE_SUBAGENT_MODEL inherit
-    # Adds an honestly-labeled "Fable Plan" entry to the /model picker
-    # (the built-in entry for this mode says "Opus Plan").
-    set -lx ANTHROPIC_CUSTOM_MODEL_OPTION opusplan
-    set -lx ANTHROPIC_CUSTOM_MODEL_OPTION_NAME "Fable Plan"
-    set -lx ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION "Fable 5 in plan mode, Opus 5 otherwise"
-    claude --model opusplan --permission-mode plan $argv
+function fableplan --description "Claude Code: Fable 5.1 plans, Opus 5 executes"
+    if not command -q jq
+        echo "fableplan: jq is required (the mode hook uses it) but is not on PATH" >&2
+        return 1
+    end
+    # The preload rewrites the model in the JSON body of a Messages API
+    # request. The other providers' adapters move it into the URL first.
+    if test -n "$CLAUDE_CODE_USE_BEDROCK$CLAUDE_CODE_USE_VERTEX$CLAUDE_CODE_USE_FOUNDRY"
+        echo "fableplan: only the Anthropic API is supported, not Bedrock, Vertex or Foundry" >&2
+        return 1
+    end
+    # path resolve follows the symlink from ~/.config/fish/functions back to
+    # the clone, where the preload, settings and hook live. The hook in
+    # fableplan.settings.json finds its script through FABLEPLAN_DIR.
+    set -lx FABLEPLAN_DIR (path resolve (status filename) | path dirname)
+    # Loads fableplan.js into the claude binary before its bundle runs. Bun
+    # splits BUN_OPTIONS on whitespace and ignores quotes, so whitespace and
+    # backslashes in the path are backslash-escaped. An existing BUN_OPTIONS
+    # value is kept.
+    set -l preload (string replace -ra '([\s\\\\])' '\\\\$1' -- "$FABLEPLAN_DIR/fableplan.js")
+    if set -q BUN_OPTIONS
+        set -lx BUN_OPTIONS "$BUN_OPTIONS --preload $preload"
+    else
+        set -lx BUN_OPTIONS "--preload $preload"
+    end
+    # Adds the Fable Plan picker row and the hook that records the permission
+    # mode; --model selects the row for this session.
+    claude --settings "$FABLEPLAN_DIR/fableplan.settings.json" \
+        --model fableplan --permission-mode plan $argv
 end

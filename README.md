@@ -1,6 +1,6 @@
 # fableplan
 
-**Fable plans, Opus executes.** Fableplan configures both parts of Claude Code's built-in `opusplan` mode.
+**Fable plans, Opus executes.** Fableplan adds a **Fable Plan** row to Claude Code's `/model` picker. Pick it and Claude Code talks to Fable 5.1 while the session is in plan mode and to Opus 5 in every other mode.
 
 <img width="1335" height="299" alt="Fable Plan in Claude Code" src="https://github.com/user-attachments/assets/116e7728-4633-4fcc-a2a5-af2a8f316ac2" />
 
@@ -10,9 +10,11 @@ fableplan -c               # continue the latest session in plan mode
 fableplan --resume <id>    # resume a session by ID in plan mode
 ```
 
+The wrapper selects the row for you. Inside the session, `/model` still works: switch to plain Opus or Sonnet and back to Fable Plan whenever you like.
+
 ## Install
 
-Requires Claude Code 2.1.219 or later, which added Opus 5. Older versions reject the execution model at startup.
+Requires a Claude Code build that honours the `modelPicker` setting and `BUN_OPTIONS`; tested with 2.1.266. Needs `jq` on `PATH`, and the Anthropic API: the wrapper refuses to start without `jq` or with `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX` or `CLAUDE_CODE_USE_FOUNDRY` set.
 
 **bash and zsh** — clone and source it:
 
@@ -37,33 +39,42 @@ git clone https://github.com/tylerlaprade/fableplan ~/.fableplan
 ln -s ~/.fableplan/fableplan.fish ~/.config/fish/functions/fableplan.fish
 ```
 
-**Uninstall:** remove the source line or plugin entry, then delete `~/.fableplan`.
+**Uninstall:** remove the source line or plugin entry, then delete `~/.fableplan`. If `/model` last saved Fable Plan, pick another model first, or `claude` will start with a model id it no longer understands.
 
 ## How it works
 
-Claude Code's [`opusplan` mode](https://code.claude.com/docs/en/model-config#opusplan-model-setting) uses the `opus` alias in plan mode and `sonnet` during execution. `fableplan()` remaps both aliases for one invocation:
+Claude Code has one mode-dependent model, [`opusplan`](https://code.claude.com/docs/en/model-config#opusplan-model-setting), and its split is fixed in the binary: the `opus` tier in plan mode, the `sonnet` tier otherwise. Earlier versions of fableplan pointed those tiers elsewhere with `ANTHROPIC_DEFAULT_OPUS_MODEL` and `ANTHROPIC_DEFAULT_SONNET_MODEL`. That worked, but for the rest of the session `opus` meant Fable and `sonnet` meant Opus, for subagents and fallback chains too.
 
-| Mode | Alias and environment variable | Fableplan target |
-|---|---|---|
-| Plan | `opus` (`ANTHROPIC_DEFAULT_OPUS_MODEL`) | `claude-fable-5` |
-| Execution | `sonnet` (`ANTHROPIC_DEFAULT_SONNET_MODEL`) | `claude-opus-5` |
+This version leaves the tiers alone and adds a model of its own. Three pieces:
 
-These environment variables require full model names. Tracking aliases such as `fable`, `opus`, and `best` do not work here, so each new Fable or Opus release requires a version update.
+1. **A picker row.** `fableplan.settings.json` adds a `modelPicker` row whose model id is `fableplan`. Claude Code does not know that id, so `behavesAs: claude-opus-5` tells it which prompt profile and context window to assume. The id itself goes into every API request unchanged.
+2. **A fetch preload.** `fableplan.js` is loaded into the `claude` binary through `BUN_OPTIONS=--preload` before its bundle runs. It wraps `fetch`, and on requests to `/v1/messages` that carry `model: "fableplan"` it writes `claude-fable-5-1` in plan mode and `claude-opus-5` otherwise. Every other request passes through untouched.
+3. **A hook.** The preload has no view of Claude Code's state, but hooks do: `UserPromptSubmit`, `PreToolUse` and `PostToolUse` all receive `permission_mode`, and `CLAUDE_PID` in their environment. `fableplan-hook.sh` writes the mode to `$XDG_RUNTIME_DIR/fableplan-<uid>/claude-mode.<pid>` (falling back to `$TMPDIR`, then `/tmp`). Both sides create the directory with mode 700 and refuse it if it is a symlink, owned by someone else, or open to others; the hook writes the file under a unique name and renames it into place. The preload reads it on every request, removes a leftover from an earlier process with the same pid at startup, and deletes its own on exit. A mode it does not recognise, or no file at all, is reported once on stderr and treated as the last mode seen (Opus if there is none).
 
-Hooks cannot replace the remap: they cannot change models, and none run when the mode changes.
+| Permission mode | Model sent |
+|---|---|
+| `plan` | `claude-fable-5-1` |
+| anything else | `claude-opus-5` |
 
-The wrapper passes `--permission-mode plan`, so new and resumed sessions start in plan mode. You can leave plan mode after startup.
+`fableplan()` exports `FABLEPLAN_DIR` for the hook, sets `BUN_OPTIONS`, passes `--settings fableplan.settings.json`, and starts with `--model fableplan --permission-mode plan`. Everything else is a normal `claude` invocation, so your own `claude` wrapper still applies. Bun splits `BUN_OPTIONS` on whitespace and ignores quotes, so the wrapper backslash-escapes the preload path; a clone under a directory with spaces works.
 
-It also sets `CLAUDE_CODE_SUBAGENT_MODEL=inherit`. Built-in subagents follow the current model, while agents that choose a model keep their choice. The remap still applies to aliases: `opus` means Fable and `sonnet` means Opus.
+Compared with the alias remap:
+
+- `opus` means Opus. `/model opus`, `model: opus` in an agent definition, and fallback chains keep their meaning.
+- Fable Plan is a real picker entry. Choose it, leave it, and come back mid-session. The startup banner says Fable Plan as well.
+- Subagents need no special handling. Agents that name a model get that model; agents that inherit get `fableplan` and follow the same split.
 
 ## Caveats
 
-- **Resume with `fableplan`, not plain `claude`.** The remap lasts only for one invocation. Resuming with plain `claude` restores `opusplan` without the remap, so planning uses Opus 5 and execution uses Sonnet 5.
-- **Aliases have new meanings throughout the session.** This includes subagents and fallback chains. The `/model` picker shows **Fable Plan**, but Claude Code's startup banner still says **Opus Plan**.
-- **A user-level subagent setting can override Fableplan.** In Claude Code 2.1.220, `CLAUDE_CODE_SUBAGENT_MODEL` in `settings.json` overrides the wrapper's `inherit` value, contrary to the documented precedence ([upstream bug](https://github.com/anthropics/claude-code/issues/78567#issuecomment-5109786270)). Remove that setting to use mode-aware subagent routing.
-- **Planning stops switching to Fable above 200K tokens.** Claude Code 2.1.220 keeps the plan on Opus 5 without a notice. Start a fresh session from the plan file for a Fable replan.
-- **Safety fallbacks differ by provider.** On the Anthropic API, flagged Fable requests switch to Opus 5 for biology or Opus 4.8 for cybersecurity. On Amazon Bedrock, Google Cloud's Agent Platform, and Microsoft Foundry, Claude Code resolves the target through `ANTHROPIC_DEFAULT_OPUS_MODEL`. Fableplan points that variable at Fable, so the request refuses instead of switching. ([docs](https://code.claude.com/docs/en/model-config#automatic-model-fallback))
-- Claude Code can change `opusplan` and fallback behavior. Recheck both after major upgrades.
+- **Resume with `fableplan`, not plain `claude`.** Choosing Fable Plan saves `fableplan` as your default model in `~/.claude/settings.json`. A plain `claude` session has no preload, sends that id to the API as-is, and fails. Run through `fableplan`, or pick another model in `/model`.
+- **The mode can lag one request.** Hooks refresh the mode file on each prompt and tool call. After you approve a plan, the request that produces the first tool call may still go to Fable; from the next tool call on it is Opus. A Shift+Tab mode change applies at the next prompt.
+- **`BUN_OPTIONS` is not a Claude Code feature.** The binary is compiled with Bun, and Bun reads `BUN_OPTIONS` before the bundle starts. A future build could stop honouring it, or change the request shape the preload looks for. Recheck after major upgrades, and delete this if Claude Code ever ships a fableplan of its own.
+- **Model ids are pinned.** `PLAN_MODEL` and `BUILD_MODEL` sit at the top of `fableplan.js`. The API takes full ids only, so each new Fable or Opus release needs a version update.
+- **Status lines see `fableplan`.** The status line JSON reports the row id, not the model of the moment. A status line that wants the live model can read the same mode file; the pid is `$CLAUDE_PID` when set, otherwise the nearest `claude` ancestor.
+- **A killed session leaves its mode file.** Normal exit removes it. After a SIGKILL the file stays until a later fableplan session with the same pid starts and clears it; nothing reads it in the meantime.
+- **Context window follows `behavesAs`.** Claude Code assumes the window it has on record for `claude-opus-5` and auto-compacts on that, in both modes.
+- **Anthropic API only.** The Bedrock, Vertex and Foundry adapters take the model out of the JSON body and put it in the URL before `fetch`, so the preload would never see `fableplan` and the provider would reject it. The wrapper refuses to start with those providers enabled.
+- **Refusal fallbacks are untested** with the preload in place.
 
 <details>
 <summary><b>Economics</b>: about $14 instead of $25 for an all-Fable session</summary>
@@ -72,20 +83,24 @@ Prices per million input/output tokens: Fable $10/$50; Opus 5 $5/$25. Prompt cac
 
 - Switching to Opus writes the plan context into Opus's cache, about $0.63 per 100K tokens. The lower cache-read price recovers that cost in about ten turns.
 - If review takes more than five minutes, the Fable cache has already expired. Rewriting the context on Opus costs half as much as rewriting it on Fable.
-- Returning to plan mode at or below 200K tokens writes the full context to Fable's cache, costing up to about $2.50.
+- Returning to plan mode writes the full context to Fable's cache, costing up to about $2.50.
 
 </details>
 
 <details>
 <summary><b>Verify</b> the routing</summary>
 
+`modelUsage` in the JSON output is keyed by the requested id, so read the model the API answered with instead:
+
 ```sh
-# Plan: expect claude-fable-5[1m].
-# Claude Code strips the [1m] context tag before the API call.
-zsh -ic 'fableplan -p --output-format json "Reply OK"' | jq '.modelUsage | keys'
-# Execution: expect claude-opus-5.
-zsh -ic 'fableplan -p --permission-mode acceptEdits --output-format json "Reply OK"' | jq '.modelUsage | keys'
+served='[.[] | select(.type=="assistant") | .message.model] | unique'
+# Plan: expect ["claude-fable-5-1"].
+zsh -ic 'fableplan -p --output-format json "Reply OK"' | jq "$served"
+# Execution: expect ["claude-opus-5"].
+zsh -ic 'fableplan -p --permission-mode acceptEdits --output-format json "Reply OK"' | jq "$served"
 ```
+
+In an interactive session the same field is in the transcript under `~/.claude/projects/`.
 
 </details>
 

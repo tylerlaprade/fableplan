@@ -1,0 +1,17 @@
+{
+  "modelPicker": {
+    "options": [
+      {
+        "model": "fableplan",
+        "label": "Fable Plan",
+        "description": "Fable 5.1 in plan mode, Opus 5 otherwise",
+        "behavesAs": "claude-opus-5"
+      }
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "\"$FABLEPLAN_DIR/fableplan-hook.sh\"" }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "\"$FABLEPLAN_DIR/fableplan-hook.sh\"" }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "\"$FABLEPLAN_DIR/fableplan-hook.sh\"" }] }]
+  }
+}
