@@ -8,8 +8,9 @@
 // "fableplan", which reaches every Messages API request unchanged. This file
 // wraps fetch and swaps that id for the plan model while the session is in
 // plan mode and for the build model otherwise. The permission mode comes from
-// the file the hook in fableplan.settings.json keeps current, keyed by this
-// process's pid.
+// the file fableplan-hook.sh keeps current. The hook names it after
+// CLAUDE_PID, which Claude Code sets to its own pid when it runs a hook, so
+// process.pid here is the same number.
 const fs = require("fs");
 
 // Full model ids only; the API does not take the fable/opus tracking aliases.
@@ -17,15 +18,42 @@ const PLAN_MODEL = "claude-fable-5-1";
 const BUILD_MODEL = "claude-opus-5";
 const ROW_ID = "fableplan";
 
+// Every value Claude Code reports as permission_mode. Anything else means the
+// hook did not run or wrote garbage, and is reported instead of trusted.
+const MODES = new Set(["plan", "default", "acceptEdits", "auto", "bypassPermissions", "dontAsk"]);
+
 const runtimeDir = process.env.XDG_RUNTIME_DIR || process.env.TMPDIR || "/tmp";
-const modeFile = `${runtimeDir}/claude-mode.${process.pid}`;
+const modeFile = `${runtimeDir}/fableplan-${process.getuid()}/claude-mode.${process.pid}`;
+
+// A session that was killed leaves its file behind. If this pid was reused,
+// that file is not ours: remove it before the first hook of this session
+// writes a fresh one.
+try {
+  fs.unlinkSync(modeFile);
+} catch {}
+
+let lastMode = "";
+let warned = false;
 
 function currentMode() {
+  let mode;
   try {
-    return fs.readFileSync(modeFile, "utf8").trim();
+    mode = fs.readFileSync(modeFile, "utf8").trim();
   } catch {
-    return "";
+    mode = "";
   }
+  if (MODES.has(mode)) {
+    lastMode = mode;
+    return mode;
+  }
+  if (!warned) {
+    warned = true;
+    console.error(
+      `fableplan: no usable permission mode in ${modeFile} (got ${JSON.stringify(mode)}); ` +
+        `is fableplan-hook.sh running? Using ${lastMode || `${BUILD_MODEL} until it does`}.`,
+    );
+  }
+  return lastMode;
 }
 
 const realFetch = globalThis.fetch;

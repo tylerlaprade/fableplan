@@ -10,8 +10,8 @@
     ]
   },
   "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "jq -r '.permission_mode // empty' > \"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/claude-mode.$CLAUDE_PID\"" }] }],
-    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "jq -r '.permission_mode // empty' > \"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/claude-mode.$CLAUDE_PID\"" }] }],
-    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "jq -r '.permission_mode // empty' > \"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/claude-mode.$CLAUDE_PID\"" }] }]
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "\"$FABLEPLAN_DIR/fableplan-hook.sh\"" }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "\"$FABLEPLAN_DIR/fableplan-hook.sh\"" }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "\"$FABLEPLAN_DIR/fableplan-hook.sh\"" }] }]
   }
 }

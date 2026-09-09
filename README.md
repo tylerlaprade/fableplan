@@ -14,7 +14,7 @@ The wrapper selects the row for you. Inside the session, `/model` still works: s
 
 ## Install
 
-Requires a Claude Code build that honours the `modelPicker` setting and `BUN_OPTIONS`; tested with 2.1.266. Needs `jq` on `PATH` for the hook.
+Requires a Claude Code build that honours the `modelPicker` setting and `BUN_OPTIONS`; tested with 2.1.266. Needs `jq` on `PATH`; the wrapper refuses to start without it.
 
 **bash and zsh** — clone and source it:
 
@@ -49,14 +49,14 @@ This version leaves the tiers alone and adds a model of its own. Three pieces:
 
 1. **A picker row.** `fableplan.settings.json` adds a `modelPicker` row whose model id is `fableplan`. Claude Code does not know that id, so `behavesAs: claude-opus-5` tells it which prompt profile and context window to assume. The id itself goes into every API request unchanged.
 2. **A fetch preload.** `fableplan.js` is loaded into the `claude` binary through `BUN_OPTIONS=--preload` before its bundle runs. It wraps `fetch`, and on requests to `/v1/messages` that carry `model: "fableplan"` it writes `claude-fable-5-1` in plan mode and `claude-opus-5` otherwise. Every other request passes through untouched.
-3. **A one-line hook.** The preload has no view of Claude Code's state, but hooks do: `UserPromptSubmit`, `PreToolUse` and `PostToolUse` all receive `permission_mode`. The hook in `fableplan.settings.json` writes it to `$XDG_RUNTIME_DIR/claude-mode.<pid>` (falling back to `$TMPDIR`, then `/tmp`). The preload reads that file on every request and deletes it on exit.
+3. **A hook.** The preload has no view of Claude Code's state, but hooks do: `UserPromptSubmit`, `PreToolUse` and `PostToolUse` all receive `permission_mode`, and `CLAUDE_PID` in their environment. `fableplan-hook.sh` writes the mode to `$XDG_RUNTIME_DIR/fableplan-<uid>/claude-mode.<pid>` (falling back to `$TMPDIR`, then `/tmp`). The directory is created with mode 700 and refused if it is a symlink or owned by someone else; the file is written under a unique name and renamed into place. The preload reads it on every request, removes a leftover from an earlier process with the same pid at startup, and deletes its own on exit. A mode it does not recognise, or no file at all, is reported once on stderr and treated as the last mode seen (Opus if there is none).
 
 | Permission mode | Model sent |
 |---|---|
 | `plan` | `claude-fable-5-1` |
 | anything else | `claude-opus-5` |
 
-`fableplan()` sets `BUN_OPTIONS`, passes `--settings fableplan.settings.json`, and starts with `--model fableplan --permission-mode plan`. Everything else is a normal `claude` invocation, so your own `claude` wrapper still applies.
+`fableplan()` exports `FABLEPLAN_DIR` for the hook, sets `BUN_OPTIONS`, passes `--settings fableplan.settings.json`, and starts with `--model fableplan --permission-mode plan`. Everything else is a normal `claude` invocation, so your own `claude` wrapper still applies. Bun splits `BUN_OPTIONS` on whitespace and ignores quotes, so the wrapper backslash-escapes the preload path; a clone under a directory with spaces works.
 
 Compared with the alias remap:
 
@@ -71,6 +71,7 @@ Compared with the alias remap:
 - **`BUN_OPTIONS` is not a Claude Code feature.** The binary is compiled with Bun, and Bun reads `BUN_OPTIONS` before the bundle starts. A future build could stop honouring it, or change the request shape the preload looks for. Recheck after major upgrades, and delete this if Claude Code ever ships a fableplan of its own.
 - **Model ids are pinned.** `PLAN_MODEL` and `BUILD_MODEL` sit at the top of `fableplan.js`. The API takes full ids only, so each new Fable or Opus release needs a version update.
 - **Status lines see `fableplan`.** The status line JSON reports the row id, not the model of the moment. A status line that wants the live model can read the same mode file; the pid is `$CLAUDE_PID` when set, otherwise the nearest `claude` ancestor.
+- **A killed session leaves its mode file.** Normal exit removes it. After a SIGKILL the file stays until a later fableplan session with the same pid starts and clears it; nothing reads it in the meantime.
 - **Context window follows `behavesAs`.** Claude Code assumes the window it has on record for `claude-opus-5` and auto-compacts on that, in both modes.
 - **Refusal fallbacks are untested** with the preload in place.
 
