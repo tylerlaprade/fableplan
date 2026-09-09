@@ -22,6 +22,6 @@ fableplan() {
     # Adds the Fable Plan picker row and the hook that records the permission
     # mode; --model selects the row for this session.
     claude --settings "$FABLEPLAN_DIR/fableplan.settings.json" \
-      --model fable-plan --permission-mode plan "$@"
+      --model fableplan --permission-mode plan "$@"
   )
 }

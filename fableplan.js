@@ -5,7 +5,7 @@
 // bundle runs. Claude Code's only mode-dependent model is opusplan, and its
 // split (opus tier in plan mode, sonnet tier otherwise) is fixed in the
 // binary. The picker row in fableplan.settings.json uses the made-up id
-// "fable-plan", which reaches every Messages API request unchanged. This file
+// "fableplan", which reaches every Messages API request unchanged. This file
 // wraps fetch and swaps that id for the plan model while the session is in
 // plan mode and for the build model otherwise. The permission mode comes from
 // the file the hook in fableplan.settings.json keeps current, keyed by this
@@ -15,7 +15,7 @@ const fs = require("fs");
 // Full model ids only; the API does not take the fable/opus tracking aliases.
 const PLAN_MODEL = "claude-fable-5-1";
 const BUILD_MODEL = "claude-opus-5";
-const ROW_ID = "fable-plan";
+const ROW_ID = "fableplan";
 
 const runtimeDir = process.env.XDG_RUNTIME_DIR || process.env.TMPDIR || "/tmp";
 const modeFile = `${runtimeDir}/claude-mode.${process.pid}`;

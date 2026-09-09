@@ -18,5 +18,5 @@ function fableplan --description "Claude Code: Fable 5.1 plans, Opus 5 executes"
     # Adds the Fable Plan picker row and the hook that records the permission
     # mode; --model selects the row for this session.
     claude --settings $dir/fableplan.settings.json \
-        --model fable-plan --permission-mode plan $argv
+        --model fableplan --permission-mode plan $argv
 end

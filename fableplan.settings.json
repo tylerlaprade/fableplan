@@ -2,7 +2,7 @@
   "modelPicker": {
     "options": [
       {
-        "model": "fable-plan",
+        "model": "fableplan",
         "label": "Fable Plan",
         "description": "Fable 5.1 in plan mode, Opus 5 otherwise",
         "behavesAs": "claude-opus-5"
