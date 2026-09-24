@@ -1,21 +1,25 @@
-# fableplan — Fable 5 plans, Opus 5 executes.
+# fableplan — Fable 5.1 plans, Opus 5.5 executes.
 # Mechanism, economics, and caveats: see README.md in this directory.
 #
-# set -lx makes each var function-local and exported: it reaches `claude`
-# (including a wrapper function) and vanishes when fableplan returns —
-# fish's native equivalent of the subshell in fableplan.sh.
-function fableplan --description "Claude Code: Fable 5 plans, Opus 5 executes"
-    # Full model names only — these vars reject the `fable`/`opus`/`best`
-    # aliases that track the latest release, so each one is pinned by hand.
-    set -lx ANTHROPIC_DEFAULT_OPUS_MODEL claude-fable-5
-    set -lx ANTHROPIC_DEFAULT_SONNET_MODEL claude-opus-5
-    # Cancel a personal claude wrapper's subagent default. `inherit` lets each
-    # agent use its own model choice, or the current plan/execution model.
-    set -lx CLAUDE_CODE_SUBAGENT_MODEL inherit
-    # Adds an honestly-labeled "Fable Plan" entry to the /model picker
-    # (the built-in entry for this mode says "Opus Plan").
-    set -lx ANTHROPIC_CUSTOM_MODEL_OPTION opusplan
-    set -lx ANTHROPIC_CUSTOM_MODEL_OPTION_NAME "Fable Plan"
-    set -lx ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION "Fable 5 in plan mode, Opus 5 otherwise"
-    claude --model opusplan --permission-mode plan $argv
+# Re-points opusplan's two halves through --settings, which outranks the `env`
+# block of user, project, and local settings and lasts for this invocation
+# only. `claude` still resolves to whatever it names in your shell (function
+# or binary), so a personal wrapper composes.
+#
+# The alias variables take full model names only — they reject the
+# `fable`/`opus`/`best` aliases that track the latest release, so each one is
+# pinned by hand. `inherit` lets each subagent use its own model choice, or the
+# current plan/execution model. The custom option adds an honestly labeled
+# "Fable Plan" entry to the /model picker (the built-in entry says "Opus Plan").
+function fableplan --description "Claude Code: Fable 5.1 plans, Opus 5.5 executes"
+    claude --model opusplan --permission-mode plan --settings '{
+      "env": {
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-fable-5-1",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus-5-5",
+        "CLAUDE_CODE_SUBAGENT_MODEL": "inherit",
+        "ANTHROPIC_CUSTOM_MODEL_OPTION": "opusplan",
+        "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": "Fable Plan",
+        "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION": "Fable 5.1 in plan mode, Opus 5.5 otherwise"
+      }
+    }' $argv
 end
