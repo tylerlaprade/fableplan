@@ -63,16 +63,13 @@ function fableplan --description "Claude Code: the latest Fable plans, the lates
         set i (math $i + 1)
     end
     jq -en --argjson user $user_settings '
-      def pin($key; $family; $role):
+      def pin($key; $family):
         $user.env[$key] // empty | tostring
-        | if ascii_downcase | contains($family | ascii_downcase) then
-            "fableplan: \($role) on \(.) from --settings\n" | stderr | empty
-          else
-            "fableplan: --settings sets \($key) to \(.), which is outside the \($family) family, so the remap would break\n" | halt_error(1)
-          end;
+        | select(ascii_downcase | contains($family | ascii_downcase) | not)
+        | "fableplan: --settings sets \($key) to \(.), which is outside the \($family) family, so the remap would break\n" | halt_error(1);
       if $user.env.ANTHROPIC_DEFAULT_SONNET_MODEL then
         "fableplan: --settings sets ANTHROPIC_DEFAULT_SONNET_MODEL, but execution runs in the sonnet slot; pin an older Opus with ANTHROPIC_DEFAULT_OPUS_MODEL\n" | halt_error(1)
-      else pin("ANTHROPIC_DEFAULT_FABLE_MODEL"; "Fable"; "planning"), pin("ANTHROPIC_DEFAULT_OPUS_MODEL"; "Opus"; "executing"), true end
+      else pin("ANTHROPIC_DEFAULT_FABLE_MODEL"; "Fable"), pin("ANTHROPIC_DEFAULT_OPUS_MODEL"; "Opus"), true end
     ' >/dev/null; or return
     set -l plan_model (_fableplan_resolve fable $user_settings); or return
     set -l execution_model (_fableplan_resolve opus $user_settings); or return
@@ -114,20 +111,33 @@ end
 function _fableplan_resolve
     set -l settings '{}'
     set -q argv[2]; and set settings $argv[2]
-    set -l model (_fableplan_probe $argv[1] $settings); or return
-    if string match -q -- "*$argv[1]*" $model
+    set -l pin ANTHROPIC_DEFAULT_(string upper -- $argv[1])_MODEL
+    set -l probe (_fableplan_probe $argv[1] $settings $pin); or return
+    set probe (string split -m 1 ' ' -- $probe)
+    set -l model $probe[1]
+    if test -z "$probe[2]"; and test -z "$(printenv $pin)"
         printf '%s\n' $model
-    else
-        set -l pin ANTHROPIC_DEFAULT_(string upper -- $argv[1])_MODEL
-        _fableplan_probe $argv[1] (printf '%s' $settings | jq -c --arg pin $pin '.env[$pin] = ""')
+        return
     end
+    set -l latest (_fableplan_probe $argv[1] (printf '%s' $settings | jq -c --arg pin $pin '.env[$pin] = ""') $pin); or return
+    set latest (string split -m 1 ' ' -- $latest)[1]
+    if test $model != $latest
+        if string match -q -- "*$argv[1]*" $model
+            echo "fableplan: using $model from $pin instead of the latest $latest" >&2
+        else
+            set model $latest
+        end
+    end
+    printf '%s\n' $model
 end
 
 function _fableplan_probe
     printf '%s\n' '{"type":"control_request","request_id":"fableplan","request":{"subtype":"get_settings"}}' |
         command claude -p --bare --model $argv[1] --no-session-persistence --settings $argv[2] \
             --input-format stream-json --output-format stream-json --verbose |
-        jq -er --arg alias $argv[1] 'select(.response.request_id == "fableplan") | .response.response.applied.model | select(. != $alias)'
+        jq -er --arg alias $argv[1] --arg pin $argv[3] '
+          select(.response.request_id == "fableplan") | .response.response
+          | select(.applied.model != $alias) | "\(.applied.model) \(.effective.env[$pin] // "")"'
     or begin
         echo "fableplan: Claude Code did not resolve the `$argv[1]` model alias" >&2
         return 1

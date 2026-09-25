@@ -40,16 +40,13 @@ fableplan() {
     esac
   done
   jq -en --argjson user "$user_settings" '
-    def pin($key; $family; $role):
+    def pin($key; $family):
       $user.env[$key] // empty | tostring
-      | if ascii_downcase | contains($family | ascii_downcase) then
-          "fableplan: \($role) on \(.) from --settings\n" | stderr | empty
-        else
-          "fableplan: --settings sets \($key) to \(.), which is outside the \($family) family, so the remap would break\n" | halt_error(1)
-        end;
+      | select(ascii_downcase | contains($family | ascii_downcase) | not)
+      | "fableplan: --settings sets \($key) to \(.), which is outside the \($family) family, so the remap would break\n" | halt_error(1);
     if $user.env.ANTHROPIC_DEFAULT_SONNET_MODEL then
       "fableplan: --settings sets ANTHROPIC_DEFAULT_SONNET_MODEL, but execution runs in the sonnet slot; pin an older Opus with ANTHROPIC_DEFAULT_OPUS_MODEL\n" | halt_error(1)
-    else pin("ANTHROPIC_DEFAULT_FABLE_MODEL"; "Fable"; "planning"), pin("ANTHROPIC_DEFAULT_OPUS_MODEL"; "Opus"; "executing"), true end
+    else pin("ANTHROPIC_DEFAULT_FABLE_MODEL"; "Fable"), pin("ANTHROPIC_DEFAULT_OPUS_MODEL"; "Opus"), true end
   ' >/dev/null || return
   plan_model=$(_fableplan_resolve fable "$user_settings") || return
   execution_model=$(_fableplan_resolve opus "$user_settings") || return
@@ -79,19 +76,30 @@ _fableplan_merge_settings() {
 }
 
 _fableplan_resolve() {
-  local settings=${2:-'{}'} model
-  model=$(_fableplan_probe "$1" "$settings") || return
+  local settings=${2:-'{}'} pin probe model latest
+  pin=ANTHROPIC_DEFAULT_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')_MODEL
+  probe=$(_fableplan_probe "$1" "$settings" "$pin") || return
+  model=${probe%% *}
+  if [ -z "${probe#* }" ] && [ -z "$(printenv "$pin")" ]; then
+    printf '%s\n' "$model"
+    return
+  fi
+  latest=$(_fableplan_probe "$1" "$(printf '%s' "$settings" | jq -c --arg pin "$pin" '.env[$pin] = ""')" "$pin") || return
+  latest=${latest%% *}
   case $model in
-    *"$1"*) printf '%s\n' "$model" ;;
-    *) _fableplan_probe "$1" "$(printf '%s' "$settings" |
-      jq -c --arg pin "ANTHROPIC_DEFAULT_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')_MODEL" '.env[$pin] = ""')" ;;
+    "$latest") ;;
+    *"$1"*) echo "fableplan: using $model from $pin instead of the latest $latest" >&2 ;;
+    *) model=$latest ;;
   esac
+  printf '%s\n' "$model"
 }
 
 _fableplan_probe() {
   printf '%s\n' '{"type":"control_request","request_id":"fableplan","request":{"subtype":"get_settings"}}' |
     command claude -p --bare --model "$1" --no-session-persistence --settings "$2" \
       --input-format stream-json --output-format stream-json --verbose |
-    jq -er --arg alias "$1" 'select(.response.request_id == "fableplan") | .response.response.applied.model | select(. != $alias)' ||
+    jq -er --arg alias "$1" --arg pin "$3" '
+      select(.response.request_id == "fableplan") | .response.response
+      | select(.applied.model != $alias) | "\(.applied.model) \(.effective.env[$pin] // "")"' ||
     { echo "fableplan: Claude Code did not resolve the \`$1\` model alias" >&2; return 1; }
 }
