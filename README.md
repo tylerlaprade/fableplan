@@ -12,7 +12,7 @@ fableplan --resume <id>    # resume a session by ID in plan mode
 
 ## Install
 
-Requires Claude Code 2.1.280 or later, which added Opus 5.5. Older versions reject the execution model at startup.
+Requires Claude Code 2.1.280 or later and `jq`.
 
 **bash and zsh** — clone and source it:
 
@@ -45,10 +45,10 @@ Claude Code's [`opusplan` mode](https://code.claude.com/docs/en/model-config#opu
 
 | Mode | Alias and environment variable | Fableplan target |
 |---|---|---|
-| Plan | `opus` (`ANTHROPIC_DEFAULT_OPUS_MODEL`) | `claude-fable-5-1` |
-| Execution | `sonnet` (`ANTHROPIC_DEFAULT_SONNET_MODEL`) | `claude-opus-5-5` |
+| Plan | `opus` (`ANTHROPIC_DEFAULT_OPUS_MODEL`) | what `fable` resolves to, now `claude-fable-5-1` |
+| Execution | `sonnet` (`ANTHROPIC_DEFAULT_SONNET_MODEL`) | what `opus` resolves to, now `claude-opus-5-5` |
 
-These environment variables require full model names. Tracking aliases such as `fable`, `opus`, and `best` do not work here, so each new Fable or Opus release requires a version update.
+These environment variables require full model names and reject aliases such as `fable` and `opus`. So each launch first asks the installed Claude Code what those two aliases resolve to, through a bare, hook-free `get_settings` control request that makes no API call and adds one to two seconds. The probe ignores any `ANTHROPIC_DEFAULT_FABLE_MODEL` or `ANTHROPIC_DEFAULT_OPUS_MODEL` pin, so a new Fable or Opus arrives with the Claude Code update that makes it the alias target. If Claude Code cannot resolve an alias, `fableplan` stops with an error instead of launching.
 
 Hooks cannot replace the remap: they cannot change models, and none run when the mode changes.
 
@@ -81,10 +81,10 @@ Prices per million tokens (input / output / 5-minute cache write / cache read): 
 <summary><b>Verify</b> the routing</summary>
 
 ```sh
-# Plan: expect claude-fable-5-1[1m].
+# Plan: expect the model `fable` resolves to, with the [1m] tag.
 # Claude Code strips the [1m] context tag before the API call.
 zsh -ic 'fableplan -p --output-format json "Reply OK"' | jq '.modelUsage | keys'
-# Execution: expect claude-opus-5-5.
+# Execution: expect the model `opus` resolves to.
 zsh -ic 'fableplan -p --permission-mode acceptEdits --output-format json "Reply OK"' | jq '.modelUsage | keys'
 ```
 
