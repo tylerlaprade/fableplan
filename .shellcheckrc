@@ -1,0 +1,6 @@
+shell=bash
+enable=all
+# Braces around every variable reference are style.
+disable=SC2250
+# A case that only filters out matches needs no default branch.
+disable=SC2249

@@ -21,15 +21,15 @@
 fableplan() {
   command -v jq >/dev/null 2>&1 || { echo "fableplan: requires jq 1.7 or later" >&2; return 1; }
   local models plan_model execution_model settings user_settings='{}' arg value remaining=$#
-  while [ "$remaining" -gt 0 ]; do
+  while [[ $remaining -gt 0 ]]; do
     arg=$1; shift; remaining=$((remaining - 1))
     case $arg in
       --model|--model=*) echo "fableplan: --model would replace opusplan and drop the Fable/Opus split; pin an older model with ANTHROPIC_DEFAULT_FABLE_MODEL or ANTHROPIC_DEFAULT_OPUS_MODEL, or run plain claude for one model" >&2; return 1 ;;
       --settings)
-        [ "$remaining" -gt 0 ] || { echo "fableplan: $arg needs a value" >&2; return 1; }
+        [[ $remaining -gt 0 ]] || { echo "fableplan: $arg needs a value" >&2; return 1; }
         value=$1; shift; remaining=$((remaining - 1)) ;;
       --settings=*) value=${arg#*=} ;;
-      --) set -- "$@" "$arg"; while [ "$remaining" -gt 0 ]; do set -- "$@" "$1"; shift; remaining=$((remaining - 1)); done; continue ;;
+      --) set -- "$@" "$arg"; while [[ $remaining -gt 0 ]]; do set -- "$@" "$1"; shift; remaining=$((remaining - 1)); done; continue ;;
       *) set -- "$@" "$arg"; continue ;;
     esac
     user_settings=$(_fableplan_merge_settings "$user_settings" "$value") || return
@@ -64,19 +64,20 @@ _fableplan_merge_settings() {
   case $(printf '%s' "$2" | sed 's/^[[:space:]]*//') in
     '{'*) printf '%s' "$2" | jq -c --argjson merged "$1" '$merged * .' 2>/dev/null ||
       { echo "fableplan: --settings is not a valid JSON object" >&2; return 1; } ;;
-    *) [ -f "$2" ] || { echo "fableplan: settings file not found: $2" >&2; return 1; }
+    *) [[ -f $2 ]] || { echo "fableplan: settings file not found: $2" >&2; return 1; }
       jq -c --argjson merged "$1" '$merged * .' "$2" 2>/dev/null ||
       { echo "fableplan: $2 is not a valid JSON object" >&2; return 1; } ;;
   esac
 }
 
 _fableplan_resolve() {
-  local alias latest pin plan_model execution_model
-  while read -r alias latest pin; do
+  local probes alias latest variable pin plan_model execution_model
+  probes=$(_fableplan_probe fable "$1" & _fableplan_probe opus "$1"; wait)
+  while read -r alias latest variable pin; do
     case ${pin%'[1m]'} in
       ''|"$latest") ;;
       *"$alias"*)
-        echo "fableplan: using $pin from ANTHROPIC_DEFAULT_$(printf '%s' "$alias" | tr '[:lower:]' '[:upper:]')_MODEL instead of the latest $latest" >&2
+        echo "fableplan: using $pin from $variable instead of the latest $latest" >&2
         latest=$pin ;;
     esac
     case $alias in
@@ -84,23 +85,24 @@ _fableplan_resolve() {
       opus) execution_model=$latest ;;
     esac
   done <<EOF
-$(_fableplan_probe fable "$1" | { _fableplan_probe opus "$1"; cat; })
+$probes
 EOF
-  [ -n "$plan_model" ] || { echo "fableplan: Claude Code did not resolve the \`fable\` model alias" >&2; return 1; }
-  [ -n "$execution_model" ] || { echo "fableplan: Claude Code did not resolve the \`opus\` model alias" >&2; return 1; }
+  [[ -n $plan_model ]] || { echo "fableplan: Claude Code did not resolve the \`fable\` model alias" >&2; return 1; }
+  [[ -n $execution_model ]] || { echo "fableplan: Claude Code did not resolve the \`opus\` model alias" >&2; return 1; }
   printf '%s %s\n' "$plan_model" "$execution_model"
 }
 
 _fableplan_probe() {
-  local pin
+  local pin probe_settings shell_pin response
   pin=ANTHROPIC_DEFAULT_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')_MODEL
-  printf '%s\n' '{"type":"control_request","request_id":"fableplan","request":{"subtype":"get_settings"}}' |
-    command claude -p --bare --model "$1" --no-session-persistence \
-      --settings "$(printf '%s' "$2" | jq -c --arg pin "$pin" '.env[$pin] = ""')" \
-      --input-format stream-json --output-format stream-json --verbose |
-    jq -r --arg alias "$1" --arg pin "$pin" --argjson caller "$2" --arg shell "$(printenv "$pin")" '
+  probe_settings=$(printf '%s' "$2" | jq -c --arg pin "$pin" '.env[$pin] = ""')
+  shell_pin=$(printenv "$pin")
+  response=$(printf '%s\n' '{"type":"control_request","request_id":"fableplan","request":{"subtype":"get_settings"}}' |
+    command claude -p --bare --model "$1" --no-session-persistence --settings "$probe_settings" \
+      --input-format stream-json --output-format stream-json --verbose)
+  jq -r --arg alias "$1" --arg pin "$pin" --argjson caller "$2" --arg shell "$shell_pin" '
       select(.response.request_id == "fableplan") | .response.response
       | select(.applied.model != $alias)
       | [.sources[] | if .source == "flagSettings" then $caller else .settings end | .env[$pin] // empty | select(. != "")] as $pins
-      | "\($alias) \(.applied.model) \($pins | last // $shell)"'
+      | "\($alias) \(.applied.model) \($pin) \($pins | last // $shell)"' <<<"$response"
 }

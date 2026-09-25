@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y fish
+      - run: shellcheck fableplan.sh tests/bin/claude tests/run.sh tests/fableplan.bats
+      - run: fish --no-execute fableplan.fish
+      - run: fish --no-execute tests/run.fish
+      - run: |
+          for file in fableplan.fish tests/run.fish; do
+            fish_indent "$file" | diff -u "$file" -
+          done
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        shell:
+          - bash
+          - zsh
+          - fish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: bats-core/bats-action@3.0.0
+      - run: sudo apt-get update && sudo apt-get install -y zsh fish
+      - run: bats tests
+        env:
+          FABLEPLAN_SHELL: ${{ matrix.shell }}

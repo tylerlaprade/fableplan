@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+launch_args=("$@")
+model=""
+flag_settings="{}"
+probe=false
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --model) model=$2; shift ;;
+    --settings) flag_settings=$2; shift ;;
+    --input-format) probe=true; shift ;;
+  esac
+  shift
+done
+
+if [[ $probe == false ]]; then
+  printf '%s\0' "${launch_args[@]}" | jq -Rs 'split("\u0000")[:-1]' >"${FAKE_CLAUDE_LAUNCH:?}"
+  exit
+fi
+
+read -r request
+case $model in
+  "${FAKE_CLAUDE_UNRESOLVED:-}") resolved=$model ;;
+  fable) resolved=claude-fable-5-1 ;;
+  opus) resolved=claude-opus-5-5 ;;
+esac
+jq -cn \
+  --argjson request "$request" \
+  --arg model "$resolved" \
+  --argjson user "${FAKE_USER_SETTINGS:-"{}"}" \
+  --argjson flag "$flag_settings" \
+  '{type: "control_response", response: {subtype: "success", request_id: $request.request_id, response: {
+    applied: {model: $model},
+    sources: [{source: "userSettings", settings: $user}, {source: "flagSettings", settings: $flag}]
+  }}}'
