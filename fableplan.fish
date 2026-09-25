@@ -7,8 +7,9 @@
 # or binary), so a personal wrapper composes.
 #
 # The alias variables take full model names only, so each launch asks the
-# installed Claude Code what `fable` and `opus` resolve to, ignoring any pins of
-# those two aliases. `inherit` lets each subagent use its own model choice, or
+# installed Claude Code what `fable` and `opus` resolve to. A pin of either alias
+# counts only when it names that family, so an OPUS pin that a parent fableplan
+# pointed at Fable falls back to the latest Opus. `inherit` lets each subagent use its own model choice, or
 # the current plan/execution model. The custom option adds an honestly labeled
 # "Fable Plan" entry to the /model picker (the built-in entry says "Opus Plan").
 function fableplan --description "Claude Code: the latest Fable plans, the latest Opus executes"
@@ -27,9 +28,20 @@ function fableplan --description "Claude Code: the latest Fable plans, the lates
 end
 
 function _fableplan_resolve
+    set -l settings '{}'
+    set -q argv[2]; and set settings $argv[2]
+    set -l model (_fableplan_probe $argv[1] $settings); or return
+    if string match -q -- "*$argv[1]*" $model
+        printf '%s\n' $model
+    else
+        set -l pin ANTHROPIC_DEFAULT_(string upper -- $argv[1])_MODEL
+        _fableplan_probe $argv[1] (printf '%s' $settings | jq -c --arg pin $pin '.env[$pin] = ""')
+    end
+end
+
+function _fableplan_probe
     printf '%s\n' '{"type":"control_request","request_id":"fableplan","request":{"subtype":"get_settings"}}' |
-        command claude -p --bare --model $argv[1] --no-session-persistence \
-            --settings '{"env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"","ANTHROPIC_DEFAULT_FABLE_MODEL":""}}' \
+        command claude -p --bare --model $argv[1] --no-session-persistence --settings $argv[2] \
             --input-format stream-json --output-format stream-json --verbose |
         jq -er --arg alias $argv[1] 'select(.response.request_id == "fableplan") | .response.response.applied.model | select(. != $alias)'
     or begin

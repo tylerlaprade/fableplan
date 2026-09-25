@@ -48,7 +48,7 @@ Claude Code's [`opusplan` mode](https://code.claude.com/docs/en/model-config#opu
 | Plan | `opus` (`ANTHROPIC_DEFAULT_OPUS_MODEL`) | what `fable` resolves to, now `claude-fable-5-1` |
 | Execution | `sonnet` (`ANTHROPIC_DEFAULT_SONNET_MODEL`) | what `opus` resolves to, now `claude-opus-5-5` |
 
-These environment variables require full model names and reject aliases such as `fable` and `opus`. So each launch first asks the installed Claude Code what those two aliases resolve to, through a bare, hook-free `get_settings` control request that makes no API call and adds one to two seconds. The probe ignores any `ANTHROPIC_DEFAULT_FABLE_MODEL` or `ANTHROPIC_DEFAULT_OPUS_MODEL` pin, so a new Fable or Opus arrives with the Claude Code update that makes it the alias target. If Claude Code cannot resolve an alias, `fableplan` stops with an error instead of launching.
+These environment variables require full model names and reject aliases such as `fable` and `opus`. So each launch first asks the installed Claude Code what those two aliases resolve to, through a bare, hook-free `get_settings` control request that makes no API call and adds one to two seconds. A new Fable or Opus arrives with the Claude Code update that makes it the alias target. An `ANTHROPIC_DEFAULT_FABLE_MODEL` or `ANTHROPIC_DEFAULT_OPUS_MODEL` pin still wins, so pinning `claude-fable-5` plans on Fable 5. A pin outside its family is ignored, so an Opus pin that a parent `fableplan` session pointed at Fable falls back to the latest Opus. If Claude Code cannot resolve an alias, `fableplan` stops with an error instead of launching.
 
 Hooks cannot replace the remap: they cannot change models, and none run when the mode changes.
 
