@@ -7,16 +7,17 @@
 # or binary), so a personal wrapper composes.
 #
 # The alias variables take full model names only, so each launch asks the
-# installed Claude Code what `fable` and `opus` resolve to. A pin of either alias
-# counts only when it names that family, so an OPUS pin that a parent fableplan
-# pointed at Fable falls back to the latest Opus. `inherit` lets each subagent use its own model choice, or
-# the current plan/execution model. The custom option adds an honestly labeled
+# installed Claude Code what `fable` and `opus` resolve to, probing both at once.
+# A pin of either alias counts only when it names that family, so an OPUS pin
+# that a parent fableplan pointed at Fable falls back to the latest Opus.
+# `inherit` lets each subagent use its own model choice, or the current
+# plan/execution model. The custom option adds an honestly labeled
 # "Fable Plan" entry to the /model picker (the built-in entry says "Opus Plan").
 #
 # Claude Code keeps only the last --settings and --model, so a caller's own
 # flags would silently drop the remap. fableplan takes them over instead: it
 # merges every --settings into its own, keeps an older Fable or Opus with a
-# warning, and refuses any model choice that breaks the Fable/Opus split.
+# warning, and refuses --model and any pin that breaks the Fable/Opus split.
 function fableplan --description "Claude Code: the latest Fable plans, the latest Opus executes"
     if not command -q jq
         echo "fableplan: requires jq 1.7 or later" >&2
@@ -24,22 +25,23 @@ function fableplan --description "Claude Code: the latest Fable plans, the lates
     end
     set -l passthrough
     set -l user_settings '{}'
-    set -l model opusplan
     set -l i 1
     while test $i -le (count $argv)
         set -l arg $argv[$i]
         set -l value
         switch $arg
-            case --settings --model
+            case --model '--model=*'
+                echo "fableplan: --model would replace opusplan and drop the Fable/Opus split; pin an older model with ANTHROPIC_DEFAULT_FABLE_MODEL or ANTHROPIC_DEFAULT_OPUS_MODEL, or run plain claude for one model" >&2
+                return 1
+            case --settings
                 set i (math $i + 1)
                 if test $i -gt (count $argv)
                     echo "fableplan: $arg needs a value" >&2
                     return 1
                 end
                 set value $argv[$i]
-            case '--settings=*' '--model=*'
+            case '--settings=*'
                 set value (string split -m 1 = -- $arg)[2]
-                set arg (string split -m 1 = -- $arg)[1]
             case --
                 set -a passthrough $argv[$i..-1]
                 break
@@ -48,18 +50,7 @@ function fableplan --description "Claude Code: the latest Fable plans, the lates
                 set i (math $i + 1)
                 continue
         end
-        switch $arg
-            case --settings
-                set user_settings (_fableplan_merge_settings $user_settings $value); or return
-            case --model
-                switch (string lower -- $value)
-                    case opusplan 'opusplan[1m]'
-                        set model $value
-                    case '*'
-                        echo "fableplan: --model $value would replace opusplan and drop the Fable/Opus split; run plain claude for one model" >&2
-                        return 1
-                end
-        end
+        set user_settings (_fableplan_merge_settings $user_settings $value); or return
         set i (math $i + 1)
     end
     jq -en --argjson user $user_settings '
@@ -71,8 +62,9 @@ function fableplan --description "Claude Code: the latest Fable plans, the lates
         "fableplan: --settings sets ANTHROPIC_DEFAULT_SONNET_MODEL, but execution runs in the sonnet slot; pin an older Opus with ANTHROPIC_DEFAULT_OPUS_MODEL\n" | halt_error(1)
       else pin("ANTHROPIC_DEFAULT_FABLE_MODEL"; "Fable"), pin("ANTHROPIC_DEFAULT_OPUS_MODEL"; "Opus"), true end
     ' >/dev/null; or return
-    set -l plan_model (_fableplan_resolve fable $user_settings); or return
-    set -l execution_model (_fableplan_resolve opus $user_settings); or return
+    set -l models (_fableplan_resolve $user_settings); or return
+    set -l plan_model $models[1]
+    set -l execution_model $models[2]
     set -l settings (jq -cn --argjson user $user_settings --arg plan $plan_model --arg execution $execution_model '
       ($user.env // {}) as $user_env
       | $user + {env: (
@@ -85,7 +77,7 @@ function fableplan --description "Claude Code: the latest Fable plans, the lates
           + $user_env
           + {ANTHROPIC_DEFAULT_OPUS_MODEL: $plan, ANTHROPIC_DEFAULT_SONNET_MODEL: $execution})}
     '); or return
-    claude --model $model --permission-mode plan --settings $settings $passthrough
+    claude --model opusplan --permission-mode plan --settings $settings $passthrough
 end
 
 function _fableplan_merge_settings
@@ -109,37 +101,49 @@ function _fableplan_merge_settings
 end
 
 function _fableplan_resolve
-    set -l settings '{}'
-    set -q argv[2]; and set settings $argv[2]
-    set -l pin ANTHROPIC_DEFAULT_(string upper -- $argv[1])_MODEL
-    set -l probe (_fableplan_probe $argv[1] $settings $pin); or return
-    set probe (string split -m 1 ' ' -- $probe)
-    set -l model $probe[1]
-    if test -z "$probe[2]"; and test -z "$(printenv $pin)"
-        printf '%s\n' $model
-        return
+    set -l probes (mktemp)
+    set -l probe_pids
+    for alias in fable opus
+        set -l pin ANTHROPIC_DEFAULT_(string upper -- $alias)_MODEL
+        command printf '%s\n' '{"type":"control_request","request_id":"fableplan","request":{"subtype":"get_settings"}}' |
+            command claude -p --bare --model $alias --no-session-persistence \
+                --settings (printf '%s' $argv[1] | jq -c --arg pin $pin '.env[$pin] = ""') \
+                --input-format stream-json --output-format stream-json --verbose |
+            command jq -r --arg alias $alias --arg pin $pin --argjson caller $argv[1] --arg shell "$(printenv $pin)" '
+              select(.response.request_id == "fableplan") | .response.response
+              | select(.applied.model != $alias)
+              | [.sources[] | if .source == "flagSettings" then $caller else .settings end | .env[$pin] // empty | select(. != "")] as $pins
+              | "\($alias) \(.applied.model) \($pins | last // $shell)"' >>$probes &
+        set -a probe_pids $last_pid
     end
-    set -l latest (_fableplan_probe $argv[1] (printf '%s' $settings | jq -c --arg pin $pin '.env[$pin] = ""') $pin); or return
-    set latest (string split -m 1 ' ' -- $latest)[1]
-    if test $model != $latest
-        if string match -q -- "*$argv[1]*" $model
-            echo "fableplan: using $model from $pin instead of the latest $latest" >&2
-        else
-            set model $latest
+    wait $probe_pids
+    set -l plan_model
+    set -l execution_model
+    for line in (cat $probes)
+        set -l fields (string split ' ' -- $line)
+        set -l alias $fields[1]
+        set -l latest $fields[2]
+        set -l pin $fields[3]
+        set -l pin_variable ANTHROPIC_DEFAULT_(string upper -- $alias)_MODEL
+        if test -n "$pin"; and test (string replace -r '\[1m\]$' '' -- $pin) != $latest; and string match -q -- "*$alias*" $pin
+            echo "fableplan: using $pin from $pin_variable instead of the latest $latest" >&2
+            set latest $pin
+        end
+        switch $alias
+            case fable
+                set plan_model $latest
+            case opus
+                set execution_model $latest
         end
     end
-    printf '%s\n' $model
-end
-
-function _fableplan_probe
-    printf '%s\n' '{"type":"control_request","request_id":"fableplan","request":{"subtype":"get_settings"}}' |
-        command claude -p --bare --model $argv[1] --no-session-persistence --settings $argv[2] \
-            --input-format stream-json --output-format stream-json --verbose |
-        jq -er --arg alias $argv[1] --arg pin $argv[3] '
-          select(.response.request_id == "fableplan") | .response.response
-          | select(.applied.model != $alias) | "\(.applied.model) \(.effective.env[$pin] // "")"'
-    or begin
-        echo "fableplan: Claude Code did not resolve the `$argv[1]` model alias" >&2
+    rm $probes
+    if test -z "$plan_model"
+        echo "fableplan: Claude Code did not resolve the `fable` model alias" >&2
         return 1
     end
+    if test -z "$execution_model"
+        echo "fableplan: Claude Code did not resolve the `opus` model alias" >&2
+        return 1
+    end
+    printf '%s\n' $plan_model $execution_model
 end
