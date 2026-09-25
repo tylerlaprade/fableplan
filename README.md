@@ -12,7 +12,7 @@ fableplan --resume <id>    # resume a session by ID in plan mode
 
 ## Install
 
-Requires Claude Code 2.1.280 or later and `jq`.
+Requires Claude Code 2.1.280 or later and `jq` 1.7 or later.
 
 **bash and zsh** — clone and source it:
 
@@ -50,18 +50,20 @@ Claude Code's [`opusplan` mode](https://code.claude.com/docs/en/model-config#opu
 
 These environment variables require full model names and reject aliases such as `fable` and `opus`. So each launch first asks the installed Claude Code what those two aliases resolve to, through a bare, hook-free `get_settings` control request that makes no API call and adds one to two seconds. A new Fable or Opus arrives with the Claude Code update that makes it the alias target. An `ANTHROPIC_DEFAULT_FABLE_MODEL` or `ANTHROPIC_DEFAULT_OPUS_MODEL` pin still wins, so pinning `claude-fable-5` plans on Fable 5. A pin outside its family is ignored, so an Opus pin that a parent `fableplan` session pointed at Fable falls back to the latest Opus. If Claude Code cannot resolve an alias, `fableplan` stops with an error instead of launching.
 
+Fableplan also takes over your own `--settings` and `--model` flags, because Claude Code keeps only the last of each and would silently drop the remap. It merges every `--settings`, whether a JSON string or a file, into its own. An `ANTHROPIC_DEFAULT_FABLE_MODEL` naming an older Fable, or an `ANTHROPIC_DEFAULT_OPUS_MODEL` naming an older Opus, replaces the latest one with a warning. A pin outside its family, or any `ANTHROPIC_DEFAULT_SONNET_MODEL`, stops the launch, since execution runs in the `sonnet` slot. `--model` accepts only `opusplan` and `opusplan[1m]`. If you set `ANTHROPIC_CUSTOM_MODEL_OPTION`, your picker entry replaces Fable Plan. Managed settings still outrank everything Fableplan passes.
+
 Hooks cannot replace the remap: they cannot change models, and none run when the mode changes.
 
 The wrapper passes `--permission-mode plan`, so new and resumed sessions start in plan mode. You can leave plan mode after startup.
 
-It also sets `CLAUDE_CODE_SUBAGENT_MODEL=inherit`. Built-in subagents follow the current model, while agents that choose a model keep their choice. The remap still applies to aliases: `opus` means Fable 5.1 and `sonnet` means Opus 5.5.
+It also sets `CLAUDE_CODE_SUBAGENT_MODEL=inherit`. Built-in subagents follow the current model, while agents that choose a model keep their choice. The remap still applies to aliases: `opus` means the plan model and `sonnet` means the execution model.
 
 ## Caveats
 
-- **Resume with `fableplan`, not plain `claude`.** The remap lasts only for one invocation. Resuming with plain `claude` restores `opusplan` without the remap, so planning uses Opus 5.5 and execution uses your `sonnet` model.
+- **Resume with `fableplan`, not plain `claude`.** The remap lasts only for one invocation. Resuming with plain `claude` restores `opusplan` without the remap, so planning uses your `opus` model and execution uses your `sonnet` model.
 - **Aliases have new meanings throughout the session.** This includes subagents and fallback chains. The `/model` picker shows **Fable Plan**, but Claude Code's startup banner still says **Opus Plan**.
-- **Your own `--settings` flag replaces Fableplan's.** Claude Code keeps only the last `--settings`, so execution falls back to your `sonnet` model. Put those settings in a settings file instead. Managed settings still outrank Fableplan.
-- **Planning stops switching to Fable above 200K tokens.** Claude Code 2.1.282 keeps the plan on Opus 5.5 without a notice. Start a fresh session from the plan file for a Fable replan.
+- **Open a new shell after updating.** A shell keeps the `fableplan` it loaded at startup, so tabs opened before an update still run the old version. Open a new tab or source the file again.
+- **Planning stops switching to Fable above 200K tokens.** Claude Code 2.1.282 keeps planning on the execution model without a notice. Start a fresh session from the plan file for a Fable replan.
 - **Safety fallbacks differ by provider.** On the Anthropic API, flagged Fable 5.1 and Opus 5.5 requests switch to Opus 5 for biology or Opus 4.8 for cybersecurity. On Amazon Bedrock, Google Cloud's Agent Platform, and Microsoft Foundry, cybersecurity-flagged requests re-run on the model in `ANTHROPIC_DEFAULT_OPUS_MODEL`. Fableplan points that variable at Fable, so those requests refuse instead of switching. ([docs](https://code.claude.com/docs/en/model-config#automatic-model-fallback))
 - Claude Code can change `opusplan` and fallback behavior. Recheck both after major upgrades.
 

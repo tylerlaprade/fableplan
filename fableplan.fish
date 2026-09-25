@@ -12,19 +12,103 @@
 # pointed at Fable falls back to the latest Opus. `inherit` lets each subagent use its own model choice, or
 # the current plan/execution model. The custom option adds an honestly labeled
 # "Fable Plan" entry to the /model picker (the built-in entry says "Opus Plan").
+#
+# Claude Code keeps only the last --settings and --model, so a caller's own
+# flags would silently drop the remap. fableplan takes them over instead: it
+# merges every --settings into its own, keeps an older Fable or Opus with a
+# warning, and refuses any model choice that breaks the Fable/Opus split.
 function fableplan --description "Claude Code: the latest Fable plans, the latest Opus executes"
-    set -l plan_model (_fableplan_resolve fable); or return
-    set -l execution_model (_fableplan_resolve opus); or return
-    claude --model opusplan --permission-mode plan --settings '{
-      "env": {
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": "'$plan_model'",
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": "'$execution_model'",
-        "CLAUDE_CODE_SUBAGENT_MODEL": "inherit",
-        "ANTHROPIC_CUSTOM_MODEL_OPTION": "opusplan",
-        "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME": "Fable Plan",
-        "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION": "'"$plan_model in plan mode, $execution_model otherwise"'"
-      }
-    }' $argv
+    if not command -q jq
+        echo "fableplan: requires jq 1.7 or later" >&2
+        return 1
+    end
+    set -l passthrough
+    set -l user_settings '{}'
+    set -l model opusplan
+    set -l i 1
+    while test $i -le (count $argv)
+        set -l arg $argv[$i]
+        set -l value
+        switch $arg
+            case --settings --model
+                set i (math $i + 1)
+                if test $i -gt (count $argv)
+                    echo "fableplan: $arg needs a value" >&2
+                    return 1
+                end
+                set value $argv[$i]
+            case '--settings=*' '--model=*'
+                set value (string split -m 1 = -- $arg)[2]
+                set arg (string split -m 1 = -- $arg)[1]
+            case --
+                set -a passthrough $argv[$i..-1]
+                break
+            case '*'
+                set -a passthrough $arg
+                set i (math $i + 1)
+                continue
+        end
+        switch $arg
+            case --settings
+                set user_settings (_fableplan_merge_settings $user_settings $value); or return
+            case --model
+                switch (string lower -- $value)
+                    case opusplan 'opusplan[1m]'
+                        set model $value
+                    case '*'
+                        echo "fableplan: --model $value would replace opusplan and drop the Fable/Opus split; run plain claude for one model" >&2
+                        return 1
+                end
+        end
+        set i (math $i + 1)
+    end
+    jq -en --argjson user $user_settings '
+      def pin($key; $family; $role):
+        $user.env[$key] // empty | tostring
+        | if ascii_downcase | contains($family | ascii_downcase) then
+            "fableplan: \($role) on \(.) from --settings\n" | stderr | empty
+          else
+            "fableplan: --settings sets \($key) to \(.), which is outside the \($family) family, so the remap would break\n" | halt_error(1)
+          end;
+      if $user.env.ANTHROPIC_DEFAULT_SONNET_MODEL then
+        "fableplan: --settings sets ANTHROPIC_DEFAULT_SONNET_MODEL, but execution runs in the sonnet slot; pin an older Opus with ANTHROPIC_DEFAULT_OPUS_MODEL\n" | halt_error(1)
+      else pin("ANTHROPIC_DEFAULT_FABLE_MODEL"; "Fable"; "planning"), pin("ANTHROPIC_DEFAULT_OPUS_MODEL"; "Opus"; "executing"), true end
+    ' >/dev/null; or return
+    set -l plan_model (_fableplan_resolve fable $user_settings); or return
+    set -l execution_model (_fableplan_resolve opus $user_settings); or return
+    set -l settings (jq -cn --argjson user $user_settings --arg plan $plan_model --arg execution $execution_model '
+      ($user.env // {}) as $user_env
+      | $user + {env: (
+          {CLAUDE_CODE_SUBAGENT_MODEL: "inherit"}
+          + (if $user_env | keys | any(startswith("ANTHROPIC_CUSTOM_MODEL_OPTION")) then {} else {
+              ANTHROPIC_CUSTOM_MODEL_OPTION: "opusplan",
+              ANTHROPIC_CUSTOM_MODEL_OPTION_NAME: "Fable Plan",
+              ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION: "\($plan) in plan mode, \($execution) otherwise"
+            } end)
+          + $user_env
+          + {ANTHROPIC_DEFAULT_OPUS_MODEL: $plan, ANTHROPIC_DEFAULT_SONNET_MODEL: $execution})}
+    '); or return
+    claude --model $model --permission-mode plan --settings $settings $passthrough
+end
+
+function _fableplan_merge_settings
+    if string match -qr '^\s*\{' -- $argv[2]
+        printf '%s' $argv[2] | jq -c --argjson merged $argv[1] '$merged * .' 2>/dev/null
+        or begin
+            echo "fableplan: --settings is not a valid JSON object" >&2
+            return 1
+        end
+    else
+        if not test -f $argv[2]
+            echo "fableplan: settings file not found: $argv[2]" >&2
+            return 1
+        end
+        jq -c --argjson merged $argv[1] '$merged * .' $argv[2] 2>/dev/null
+        or begin
+            echo "fableplan: $argv[2] is not a valid JSON object" >&2
+            return 1
+        end
+    end
 end
 
 function _fableplan_resolve
