@@ -7,7 +7,7 @@
 # or binary), so a personal wrapper composes.
 #
 # The alias variables take full model names only, so each launch asks the
-# installed Claude Code what `fable` and `opus` resolve to, probing both at once.
+# installed Claude Code what `fable` and `opus` resolve to, in one process.
 # A pin of either alias counts only when it names that family, so an OPUS pin
 # that a parent fableplan pointed at Fable falls back to the latest Opus.
 # `inherit` lets each subagent use its own model choice, or the current
@@ -101,49 +101,6 @@ function _fableplan_merge_settings
 end
 
 function _fableplan_resolve
-    set -l probes (mktemp)
-    set -l probe_pids
-    for alias in fable opus
-        set -l pin ANTHROPIC_DEFAULT_(string upper -- $alias)_MODEL
-        command printf '%s\n' '{"type":"control_request","request_id":"fableplan","request":{"subtype":"get_settings"}}' |
-            command claude -p --bare --model $alias --no-session-persistence \
-                --settings (printf '%s' $argv[1] | jq -c --arg pin $pin '.env[$pin] = ""') \
-                --input-format stream-json --output-format stream-json --verbose |
-            command jq -r --arg alias $alias --arg pin $pin --argjson caller $argv[1] --arg shell "$(printenv $pin)" '
-              select(.response.request_id == "fableplan") | .response.response
-              | select(.applied.model != $alias)
-              | [.sources[] | if .source == "flagSettings" then $caller else .settings end | .env[$pin] // empty | select(. != "")] as $pins
-              | "\($alias) \(.applied.model) \($pins | last // $shell)"' >>$probes &
-        set -a probe_pids $last_pid
-    end
-    wait $probe_pids
-    set -l plan_model
-    set -l execution_model
-    for line in (cat $probes)
-        set -l fields (string split ' ' -- $line)
-        set -l alias $fields[1]
-        set -l latest $fields[2]
-        set -l pin $fields[3]
-        set -l pin_variable ANTHROPIC_DEFAULT_(string upper -- $alias)_MODEL
-        if test -n "$pin"; and test (string replace -r '\[1m\]$' '' -- $pin) != $latest; and string match -q -- "*$alias*" $pin
-            echo "fableplan: using $pin from $pin_variable instead of the latest $latest" >&2
-            set latest $pin
-        end
-        switch $alias
-            case fable
-                set plan_model $latest
-            case opus
-                set execution_model $latest
-        end
-    end
-    rm $probes
-    if test -z "$plan_model"
-        echo "fableplan: Claude Code did not resolve the `fable` model alias" >&2
-        return 1
-    end
-    if test -z "$execution_model"
-        echo "fableplan: Claude Code did not resolve the `opus` model alias" >&2
-        return 1
-    end
-    printf '%s\n' $plan_model $execution_model
+    set -l definition (path resolve (functions --details _fableplan_resolve))
+    command bash -c 'source "$1"; _fableplan_resolve "$2"' bash (path dirname $definition)/fableplan.sh $argv[1] | string split ' '
 end

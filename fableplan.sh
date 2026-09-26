@@ -7,7 +7,7 @@
 # alias, or binary), so a personal wrapper composes.
 #
 # The alias variables take full model names only, so each launch asks the
-# installed Claude Code what `fable` and `opus` resolve to, probing both at once.
+# installed Claude Code what `fable` and `opus` resolve to, in one process.
 # A pin of either alias counts only when it names that family, so an OPUS pin
 # that a parent fableplan pointed at Fable falls back to the latest Opus.
 # `inherit` lets each subagent use its own model choice, or the current
@@ -71,8 +71,19 @@ _fableplan_merge_settings() {
 }
 
 _fableplan_resolve() {
-  local probes alias latest variable pin plan_model execution_model
-  probes=$(_fableplan_probe fable "$1" & _fableplan_probe opus "$1"; wait)
+  local probe_settings responses fable_shell opus_shell resolutions alias latest variable pin plan_model execution_model
+  probe_settings=$(printf '%s' "$1" | jq -c '.env.ANTHROPIC_DEFAULT_FABLE_MODEL = "" | .env.ANTHROPIC_DEFAULT_OPUS_MODEL = ""')
+  responses=$(_fableplan_probe "$probe_settings")
+  fable_shell=$(printenv ANTHROPIC_DEFAULT_FABLE_MODEL)
+  opus_shell=$(printenv ANTHROPIC_DEFAULT_OPUS_MODEL)
+  resolutions=$(jq -r --argjson caller "$1" --arg fable "$fable_shell" --arg opus "$opus_shell" '
+    {fable: $fable, opus: $opus} as $shell
+    | .response.request_id as $alias
+    | .response.response
+    | select(.applied.model != $alias and (.applied.model | contains($alias)))
+    | "ANTHROPIC_DEFAULT_\($alias | ascii_upcase)_MODEL" as $variable
+    | [.sources[] | if .source == "flagSettings" then $caller else .settings end | .env[$variable] // empty | select(. != "")] as $pins
+    | "\($alias) \(.applied.model) \($variable) \(($pins | last) // $shell[$alias])"' <<<"$responses")
   while read -r alias latest variable pin; do
     case ${pin%'[1m]'} in
       ''|"$latest") ;;
@@ -85,7 +96,7 @@ _fableplan_resolve() {
       opus) execution_model=$latest ;;
     esac
   done <<EOF
-$probes
+$resolutions
 EOF
   [[ -n $plan_model ]] || { echo "fableplan: Claude Code did not resolve the \`fable\` model alias" >&2; return 1; }
   [[ -n $execution_model ]] || { echo "fableplan: Claude Code did not resolve the \`opus\` model alias" >&2; return 1; }
@@ -93,16 +104,24 @@ EOF
 }
 
 _fableplan_probe() {
-  local pin probe_settings shell_pin response
-  pin=ANTHROPIC_DEFAULT_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')_MODEL
-  probe_settings=$(printf '%s' "$2" | jq -c --arg pin "$pin" '.env[$pin] = ""')
-  shell_pin=$(printenv "$pin")
-  response=$(printf '%s\n' '{"type":"control_request","request_id":"fableplan","request":{"subtype":"get_settings"}}' |
-    command claude -p --bare --model "$1" --no-session-persistence --settings "$probe_settings" \
-      --input-format stream-json --output-format stream-json --verbose)
-  jq -r --arg alias "$1" --arg pin "$pin" --argjson caller "$2" --arg shell "$shell_pin" '
-      select(.response.request_id == "fableplan") | .response.response
-      | select(.applied.model != $alias)
-      | [.sources[] | if .source == "flagSettings" then $caller else .settings end | .env[$pin] // empty | select(. != "")] as $pins
-      | "\($alias) \(.applied.model) \($pin) \($pins | last // $shell)"' <<<"$response"
+  local responses line
+  responses=$(mktemp -d)/responses
+  mkfifo "$responses"
+  # shellcheck disable=SC2094,SC2312 # The FIFO carries replies back to the request loop, and an empty reply is the failure signal.
+  {
+    {
+      printf '%s\n' \
+        '{"type":"control_request","request_id":"fable","request":{"subtype":"get_settings"}}' \
+        '{"type":"control_request","request_id":"switch","request":{"subtype":"set_model","model":"opus"}}'
+      while IFS= read -r line; do
+        case $line in
+          *'"request_id":"switch"'*) printf '%s\n' '{"type":"control_request","request_id":"opus","request":{"subtype":"get_settings"}}' ;;
+          *'"request_id":"fable"'*) printf '%s\n' "$line" >&4 ;;
+          *'"request_id":"opus"'*) printf '%s\n' "$line" >&4; break ;;
+        esac
+      done <"$responses"
+    } | command claude -p --bare --model fable --no-session-persistence --settings "$1" \
+      --input-format stream-json --output-format stream-json --verbose >"$responses"
+  } 4>&1
+  rm -r "${responses%/*}"
 }

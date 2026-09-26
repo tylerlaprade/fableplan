@@ -19,18 +19,31 @@ if [[ $probe == false ]]; then
   exit
 fi
 
-read -r request
-case $model in
-  "${FAKE_CLAUDE_UNRESOLVED:-}") resolved=$model ;;
-  fable) resolved=claude-fable-5-1 ;;
-  opus) resolved=claude-opus-5-5 ;;
-esac
-jq -cn \
-  --argjson request "$request" \
-  --arg model "$resolved" \
-  --argjson user "${FAKE_USER_SETTINGS:-"{}"}" \
-  --argjson flag "$flag_settings" \
-  '{type: "control_response", response: {subtype: "success", request_id: $request.request_id, response: {
-    applied: {model: $model},
-    sources: [{source: "userSettings", settings: $user}, {source: "flagSettings", settings: $flag}]
-  }}}'
+resolve() {
+  case $1 in
+    "${FAKE_CLAUDE_UNRESOLVED:-}") printf '%s' "$1" ;;
+    fable) printf claude-fable-5-1 ;;
+    opus) printf claude-opus-5-5 ;;
+  esac
+}
+
+model=$(resolve "$model")
+while read -r request; do
+  subtype=$(jq -r .request.subtype <<<"$request")
+  case $subtype in
+    set_model)
+      requested=$(jq -r .request.model <<<"$request")
+      [[ -n ${FAKE_CLAUDE_IGNORES_SWITCH:-} ]] || model=$(resolve "$requested")
+      jq -cn --argjson request "$request" '{type: "control_response", response: {subtype: "success", request_id: $request.request_id}}' ;;
+    get_settings)
+      jq -cn \
+        --argjson request "$request" \
+        --arg model "$model" \
+        --argjson user "${FAKE_USER_SETTINGS:-"{}"}" \
+        --argjson flag "$flag_settings" \
+        '{type: "control_response", response: {subtype: "success", request_id: $request.request_id, response: {
+          applied: {model: $model},
+          sources: [{source: "userSettings", settings: $user}, {source: "flagSettings", settings: $flag}]
+        }}}' ;;
+  esac
+done
