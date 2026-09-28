@@ -11,7 +11,7 @@ setup() {
   PATH="${BATS_TEST_DIRNAME:?}/bin:$PATH"
   FAKE_CLAUDE_LAUNCH="${BATS_TEST_TMPDIR:?}/launch.json"
   export PATH FAKE_CLAUDE_LAUNCH
-  unset ANTHROPIC_DEFAULT_FABLE_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL FAKE_USER_SETTINGS FAKE_CLAUDE_UNRESOLVED FAKE_CLAUDE_IGNORES_SWITCH
+  unset ANTHROPIC_DEFAULT_FABLE_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL FAKE_USER_SETTINGS FAKE_CLAUDE_UNRESOLVED FAKE_CLAUDE_ADVISOR
 }
 
 fableplan() {
@@ -156,7 +156,12 @@ refused() {
   refused "did not resolve the \`opus\` model alias"
 }
 
-@test "stops when the switch to Opus does not take" {
-  FAKE_CLAUDE_IGNORES_SWITCH=1 run fableplan
-  refused "did not resolve the \`opus\` model alias"
+@test "stops when Claude Code cannot resolve Fable" {
+  FAKE_CLAUDE_UNRESOLVED=fable run fableplan
+  refused "did not resolve the \`fable\` model alias"
+}
+
+@test "stops when the Fable lookup answers with another family" {
+  FAKE_CLAUDE_ADVISOR=claude-opus-5-5 run fableplan
+  refused "did not resolve the \`fable\` model alias"
 }

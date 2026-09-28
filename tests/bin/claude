@@ -3,11 +3,13 @@ set -euo pipefail
 
 launch_args=("$@")
 model=""
+advisor=""
 flag_settings="{}"
 probe=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --model) model=$2; shift ;;
+    --advisor) advisor=$2; shift ;;
     --settings) flag_settings=$2; shift ;;
     --input-format) probe=true; shift ;;
   esac
@@ -27,23 +29,16 @@ resolve() {
   esac
 }
 
-model=$(resolve "$model")
-while read -r request; do
-  subtype=$(jq -r .request.subtype <<<"$request")
-  case $subtype in
-    set_model)
-      requested=$(jq -r .request.model <<<"$request")
-      [[ -n ${FAKE_CLAUDE_IGNORES_SWITCH:-} ]] || model=$(resolve "$requested")
-      jq -cn --argjson request "$request" '{type: "control_response", response: {subtype: "success", request_id: $request.request_id}}' ;;
-    get_settings)
-      jq -cn \
-        --argjson request "$request" \
-        --arg model "$model" \
-        --argjson user "${FAKE_USER_SETTINGS:-"{}"}" \
-        --argjson flag "$flag_settings" \
-        '{type: "control_response", response: {subtype: "success", request_id: $request.request_id, response: {
-          applied: {model: $model},
-          sources: [{source: "userSettings", settings: $user}, {source: "flagSettings", settings: $flag}]
-        }}}' ;;
-  esac
-done
+read -r request
+resolved_model=$(resolve "$model")
+resolved_advisor=${FAKE_CLAUDE_ADVISOR:-$(resolve "$advisor")}
+jq -cn \
+  --argjson request "$request" \
+  --arg model "$resolved_model" \
+  --arg advisor "$resolved_advisor" \
+  --argjson user "${FAKE_USER_SETTINGS:-"{}"}" \
+  --argjson flag "$flag_settings" \
+  '{type: "control_response", response: {subtype: "success", request_id: $request.request_id, response: {
+    applied: {model: $model, advisor: $advisor},
+    sources: [{source: "userSettings", settings: $user}, {source: "flagSettings", settings: $flag}]
+  }}}'

@@ -7,7 +7,7 @@
 # or binary), so a personal wrapper composes.
 #
 # The alias variables take full model names only, so each launch asks the
-# installed Claude Code what `fable` and `opus` resolve to, in one process.
+# installed Claude Code what `fable` and `opus` resolve to in one request.
 # A pin of either alias counts only when it names that family, so an OPUS pin
 # that a parent fableplan pointed at Fable falls back to the latest Opus.
 # `inherit` lets each subagent use its own model choice, or the current
@@ -101,6 +101,45 @@ function _fableplan_merge_settings
 end
 
 function _fableplan_resolve
-    set -l definition (path resolve (functions --details _fableplan_resolve))
-    command bash -c 'source "$1"; _fableplan_resolve "$2"' bash (path dirname $definition)/fableplan.sh $argv[1] | string split ' '
+    set -l probe_settings (printf '%s' $argv[1] | jq -c '.env.ANTHROPIC_DEFAULT_FABLE_MODEL = "" | .env.ANTHROPIC_DEFAULT_OPUS_MODEL = ""')
+    set -l response (printf '%s\n' '{"type":"control_request","request_id":"fableplan","request":{"subtype":"get_settings"}}' |
+        command claude -p --bare --model opus --advisor fable --no-session-persistence --settings $probe_settings \
+            --input-format stream-json --output-format stream-json --verbose)
+    set -l plan_model
+    set -l execution_model
+    for line in (printf '%s\n' $response | jq -r --argjson caller $argv[1] --arg fable "$(printenv ANTHROPIC_DEFAULT_FABLE_MODEL)" --arg opus "$(printenv ANTHROPIC_DEFAULT_OPUS_MODEL)" '
+          {fable: $fable, opus: $opus} as $shell
+          | select(.response.request_id == "fableplan") | .response.response
+          | .sources as $sources
+          | {fable: .applied.advisor, opus: .applied.model} | to_entries[]
+          | .key as $alias
+          | select(.value != null and .value != $alias and (.value | contains($alias)))
+          | "ANTHROPIC_DEFAULT_\($alias | ascii_upcase)_MODEL" as $variable
+          | [$sources[] | if .source == "flagSettings" then $caller else .settings end | .env[$variable] // empty | select(. != "")] as $pins
+          | "\($alias) \(.value) \($variable) \(($pins | last) // $shell[$alias])"')
+        set -l fields (string split ' ' -- $line)
+        set -l alias $fields[1]
+        set -l latest $fields[2]
+        set -l variable $fields[3]
+        set -l pin $fields[4]
+        if test -n "$pin"; and test (string replace -r '\[1m\]$' '' -- $pin) != $latest; and string match -q -- "*$alias*" $pin
+            echo "fableplan: using $pin from $variable instead of the latest $latest" >&2
+            set latest $pin
+        end
+        switch $alias
+            case fable
+                set plan_model $latest
+            case opus
+                set execution_model $latest
+        end
+    end
+    if test -z "$plan_model"
+        echo "fableplan: Claude Code did not resolve the `fable` model alias" >&2
+        return 1
+    end
+    if test -z "$execution_model"
+        echo "fableplan: Claude Code did not resolve the `opus` model alias" >&2
+        return 1
+    end
+    printf '%s\n' $plan_model $execution_model
 end
