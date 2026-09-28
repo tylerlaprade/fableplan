@@ -87,17 +87,18 @@ _fableplan_resolve() {
     | select(.value != null and .value != $alias and (.value | contains($alias)))
     | "ANTHROPIC_DEFAULT_\($alias | ascii_upcase)_MODEL" as $variable
     | [$sources[] | if .source == "flagSettings" then $caller else .settings end | .env[$variable] // empty | select(. != "")] as $pins
-    | "\($alias) \(.value) \($variable) \(($pins | last) // $shell[$alias])"' <<<"$response")
+    | (($pins | last) // $shell[$alias]) as $pin
+    | (if ($pin | contains($alias)) and ($pin | rtrimstr("[1m]")) != .value then $pin else "" end) as $pin
+    | "\($alias) \(.value) \($variable) \($pin)"' <<<"$response")
   while read -r alias latest variable pin; do
-    case ${pin%'[1m]'} in
-      ''|"$latest") ;;
-      *"$alias"*)
-        echo "fableplan: using $pin from $variable instead of the latest $latest" >&2
-        latest=$pin ;;
-    esac
+    if [[ -n $pin ]]; then
+      echo "fableplan: using $pin from $variable instead of the latest $latest" >&2
+      latest=$pin
+    fi
     case $alias in
       fable) plan_model=$latest ;;
       opus) execution_model=$latest ;;
+      *) echo "fableplan: Claude Code answered for an unknown alias: $alias" >&2; return 1 ;;
     esac
   done <<EOF
 $resolutions

@@ -94,10 +94,11 @@ zsh -ic 'fableplan -p --permission-mode acceptEdits --output-format json "Reply 
 
 ## Development
 
-CI runs ShellCheck with every rule enabled, checks the fish files with `fish --no-execute` and `fish_indent`, and runs the bats suite once per shell against a stand-in `claude` in `tests/bin`, so no test reaches the API.
+CI runs ShellCheck under the shared policy in [dotfiles](https://github.com/tylerlaprade/dotfiles/blob/master/.shellcheckrc), checks the fish files with `fish --no-execute` and `fish_indent`, and runs the bats suite once per shell against a stand-in `claude` in `tests/bin`, so no test reaches the API.
 
 ```sh
-shellcheck fableplan.sh tests/bin/claude tests/run.sh tests/fableplan.bats
+shellcheck --shell=bash fableplan.sh
+shellcheck tests/bin/claude tests/run.sh tests/fableplan.bats
 FABLEPLAN_SHELL=bash bats tests   # also zsh, or fish where it is installed
 ```
 

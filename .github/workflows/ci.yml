@@ -10,7 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: sudo apt-get update && sudo apt-get install -y fish
-      - run: shellcheck fableplan.sh tests/bin/claude tests/run.sh tests/fableplan.bats
+      - run: curl -fsSL -o "$HOME/.shellcheckrc" https://raw.githubusercontent.com/tylerlaprade/dotfiles/master/.shellcheckrc
+      - run: shellcheck --shell=bash fableplan.sh
+      - run: shellcheck tests/bin/claude tests/run.sh tests/fableplan.bats
       - run: fish --no-execute fableplan.fish
       - run: fish --no-execute tests/run.fish
       - run: |

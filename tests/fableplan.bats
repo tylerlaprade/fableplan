@@ -1,10 +1,8 @@
 #!/usr/bin/env bats
 
 setup_file() {
-  case ${FABLEPLAN_SHELL:-} in
-    bash|zsh|fish) command -v "$FABLEPLAN_SHELL" >/dev/null || { echo "$FABLEPLAN_SHELL is not installed" >&2; return 1; } ;;
-    *) echo "Set FABLEPLAN_SHELL to bash, zsh, or fish" >&2; return 1 ;;
-  esac
+  [[ -n ${FABLEPLAN_SHELL:-} ]] || { echo "Set FABLEPLAN_SHELL to bash, zsh, or fish" >&2; return 1; }
+  command -v "$FABLEPLAN_SHELL" >/dev/null || { echo "$FABLEPLAN_SHELL is not installed" >&2; return 1; }
 }
 
 setup() {
@@ -19,6 +17,7 @@ fableplan() {
     fish) fish --no-config "$BATS_TEST_DIRNAME/run.fish" "$@" ;;
     zsh) zsh -f "$BATS_TEST_DIRNAME/run.sh" "$@" ;;
     bash) bash "$BATS_TEST_DIRNAME/run.sh" "$@" ;;
+    *) echo "FABLEPLAN_SHELL must be bash, zsh, or fish, not $FABLEPLAN_SHELL" >&2; return 1 ;;
   esac
 }
 

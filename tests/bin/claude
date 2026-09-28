@@ -12,6 +12,7 @@ while [[ $# -gt 0 ]]; do
     --advisor) advisor=$2; shift ;;
     --settings) flag_settings=$2; shift ;;
     --input-format) probe=true; shift ;;
+    *) ;;
   esac
   shift
 done
@@ -26,6 +27,7 @@ resolve() {
     "${FAKE_CLAUDE_UNRESOLVED:-}") printf '%s' "$1" ;;
     fable) printf claude-fable-5-1 ;;
     opus) printf claude-opus-5-5 ;;
+    *) printf '%s' "$1" ;;
   esac
 }
 

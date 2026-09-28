@@ -116,13 +116,15 @@ function _fableplan_resolve
           | select(.value != null and .value != $alias and (.value | contains($alias)))
           | "ANTHROPIC_DEFAULT_\($alias | ascii_upcase)_MODEL" as $variable
           | [$sources[] | if .source == "flagSettings" then $caller else .settings end | .env[$variable] // empty | select(. != "")] as $pins
-          | "\($alias) \(.value) \($variable) \(($pins | last) // $shell[$alias])"')
+          | (($pins | last) // $shell[$alias]) as $pin
+          | (if ($pin | contains($alias)) and ($pin | rtrimstr("[1m]")) != .value then $pin else "" end) as $pin
+          | "\($alias) \(.value) \($variable) \($pin)"')
         set -l fields (string split ' ' -- $line)
         set -l alias $fields[1]
         set -l latest $fields[2]
         set -l variable $fields[3]
         set -l pin $fields[4]
-        if test -n "$pin"; and test (string replace -r '\[1m\]$' '' -- $pin) != $latest; and string match -q -- "*$alias*" $pin
+        if test -n "$pin"
             echo "fableplan: using $pin from $variable instead of the latest $latest" >&2
             set latest $pin
         end
@@ -131,6 +133,9 @@ function _fableplan_resolve
                 set plan_model $latest
             case opus
                 set execution_model $latest
+            case '*'
+                echo "fableplan: Claude Code answered for an unknown alias: $alias" >&2
+                return 1
         end
     end
     if test -z "$plan_model"
