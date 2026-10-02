@@ -101,10 +101,7 @@ function _fableplan_merge_settings
 end
 
 function _fableplan_resolve
-    # get_settings reports one model per reply, so Fable rides along as the
-    # advisor to get both answers from one bare probe with no API call. Pins
-    # are blanked here so the reply names the latest models; pins are read
-    # from the reply's sources and applied below.
+    # get_settings names one model per reply; the advisor slot carries Fable's.
     set -l probe_settings (printf '%s' $argv[1] | jq -c '.env.ANTHROPIC_DEFAULT_FABLE_MODEL = "" | .env.ANTHROPIC_DEFAULT_OPUS_MODEL = ""')
     set -l response (printf '%s\n' '{"type":"control_request","request_id":"fableplan","request":{"subtype":"get_settings"}}' |
         command claude -p --bare --model opus --advisor fable --no-session-persistence --settings $probe_settings \
